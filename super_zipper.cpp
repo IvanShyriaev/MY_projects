@@ -351,37 +351,31 @@ bool Create_Process(const char* path, std::string& commandLine)
         return true;
 
     #elif __linux__
-            pid_t pid = fork(); 
+        pid_t pid;
+    char* args[] = {const_cast<char*>(path.c_str()), const_cast<char*>(commandLine.c_str()), NULL};
 
-        if (pid < 0) 
-        { 
-            std::cerr << "Failed to fork process." << std::endl;
-            return false;
-        } 
-        else if (pid == 0) 
-        { 
-            char* args[] = {const_cast<char*>(path), const_cast<char*>(commandLine.c_str()), NULL};
-            
-            execv(path, args); 
+    // Use posix_spawn to create the new process
+    int result = posix_spawn(&pid, path.c_str(), NULL, NULL, args, environ);
+    
+    if (result != 0) {
+        std::cerr << "Failed to spawn process: " << strerror(result) << std::endl;
+        return false;
+    }
 
-            std::cerr << "Failed to execute process." << std::endl;
-            exit(1); 
-        }
-        else
-        {
-            int status;
-            waitpid(pid, &status, 0); 
+    // Wait for the child process to finish
+    int status;
+    if (waitpid(pid, &status, 0) == -1) {
+        std::cerr << "Failed to wait for child process: " << strerror(errno) << std::endl;
+        return false;
+    }
 
-            if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
-            {
-                return true; 
-            }
-            else 
-            {
-                std::cerr << "Child process terminated with an error." << std::endl;
-                return false;
-            }
-        }
+    // Check if the child process exited normally
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+        return true;
+    } else {
+        std::cerr << "Child process terminated with an error." << std::endl;
+        return false;
+    }
     #endif
 }
 // NO IDEA || RE_DO
@@ -530,6 +524,6 @@ int main()
     AgregateFiles(directoryPath);
 
     std::cout << "Archiving complete." << std::endl;
-    
+
     return 0;
 }
