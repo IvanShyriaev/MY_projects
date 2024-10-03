@@ -12,6 +12,7 @@
 
     #define PATH_SEPARATOR "\\"
     std::string rootDirectory = "D:\\";
+    #define ARCHIVE_TYPE ".zip"
 #elif __linux__
     #include<sys/stat.h>
     #include<cstdlib>
@@ -27,6 +28,7 @@
 
     #define PATH_SEPARATOR "/"
     std::string rootDirectory = "/";
+    #define ARCHIVE_TYPE ".7z"
 #endif
 
 
@@ -317,7 +319,7 @@ std::string BrowseForFolder()
     }
 }
 
-bool Create_Process(const char* path, std::string& commandLine)
+bool Create_Process(const char* path,const std::vector<std::string>& args)
 {
     #ifdef _WIN32
         STARTUPINFO si;
@@ -327,7 +329,7 @@ bool Create_Process(const char* path, std::string& commandLine)
         ZeroMemory(&pi, sizeof(pi));
         
         if (!CreateProcess(path, 
-                        const_cast<char*>(commandLine.c_str()),  
+                        const_cast<char*>(args[0].c_str()),  
                         NULL,        
                         NULL,        
                         FALSE,       
@@ -351,19 +353,22 @@ bool Create_Process(const char* path, std::string& commandLine)
         return true;
 
     #elif __linux__
-        pid_t pid;
-    char* args[] = {const_cast<char*>(path.c_str()), const_cast<char*>(commandLine.c_str()), NULL};
-
-    // Use posix_spawn to create the new process
-    int result = posix_spawn(&pid, path.c_str(), NULL, NULL, args, environ);
-    
-    if (result != 0) {
-        std::cerr << "Failed to spawn process: " << strerror(result) << std::endl;
-        return false;
+    std::vector<char*> argv;
+    for (const auto& arg : command_args) {
+        argv.push_back((char*)arg.c_str());
     }
+    argv.push_back(nullptr); // NULL-terminate the argument list
 
-    // Wait for the child process to finish
+    // The PID of the new process
+    pid_t pid;
     int status;
+
+    // Use posix_spawn to create a new process
+    if (posix_spawn(&pid, path, nullptr, nullptr, argv.data(), environ) != 0) {
+        std::cerr << "Error: Failed to spawn process." << std::endl;
+        return;
+    }
+    // Wait for the child process to finish
     if (waitpid(pid, &status, 0) == -1) {
         std::cerr << "Failed to wait for child process: " << strerror(errno) << std::endl;
         return false;
@@ -385,38 +390,37 @@ bool ArchiveFiles(const std::vector<std::string>& filePaths, const std::string& 
     const char* sevenZipPath = "C:\\Program Files\\7-Zip\\7z.exe";
 
     std::string commandLine = "\"" + std::string(sevenZipPath) + "\" a \"" + archivePath + "\"";
-    
+    std::vector<std::string> args;
+    args.push_back(commandLine)
     for (const auto& filePath : filePaths) 
     {
         commandLine += " \"" + filePath + "\"";
     }
 
-    if (!Create_Process(sevenZipPath, commandLine)) 
-    {
-        std::cerr << "Failed to create archive: " << archivePath << std::endl;
-        return false; 
-    }
-    std::cout << "Archive created: " << archivePath << std::endl;
 
-#else
-    const char* sevenZipPath = "zip"; 
+#elif __linux__
+    const char* sevenZipPath = "/usr/bin/7z"; 
 
-    std::string commandLine = zipPath;
-    commandLine += " \"" + archivePath + "\"";
+    std::vector<std::string> args;
+    command_args.push_back("7z");
+    command_args.push_back("a");
+    command_args.push_back(archive_name);
 
     for (const auto& filePath : filePaths) 
     {
-        commandLine += " \"" + filePath + "\""; 
+        command_args.push_back(filePath);
     }
 
-    if (!Create_Process(sevenZipPath, commandLine)) 
+#endif
+
+    if (!Create_Process(sevenZipPath, args)) 
     {
         std::cerr << "Failed to create archive: " << archivePath << std::endl;
         return false;
     }
 
     std::cout << "Archive created: " << archivePath << std::endl;
-#endif
+
 
     return true; 
 }
@@ -503,7 +507,7 @@ void AgregateFiles(const std::string& directoryPath)
 
     for (const auto& pair : files) 
     {
-        std::string archivePath = directoryPath + PATH_SEPARATOR + pair.first + ".zip"; // Change to ".7z" if using 7z on Linux
+        std::string archivePath = directoryPath + PATH_SEPARATOR + pair.first + ARCHIVE_TYPE; // Change to ".7z" if using 7z on Linux
         if (!ArchiveFiles(pair.second, archivePath)) 
         {
             return;
